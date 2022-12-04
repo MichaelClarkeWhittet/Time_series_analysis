@@ -1,0 +1,74 @@
+Sub Spectral_aligner()
+'Will only run when the focus is on Sheet4
+'Solver must be set as a VBA reference. VBA>Tools>References>Solver
+
+Dim wSpectral As Worksheet
+Dim wPeaks As Worksheet
+Dim lCompound As Long
+Dim wCompound As Worksheet
+
+Dim itrue_peaks As Integer
+Dim lCol As Long
+Dim lPoints As Long
+Dim lSSD_min As Long
+Dim rSUM As Range
+
+Set wSpectral = ThisWorkbook.Sheets("Sheet4")
+Set wPeaks = ThisWorkbook.Sheets("Sheet3")
+Set wCompound = ThisWorkbook.Sheets("Sheet5")
+
+wCompound.Range("C:C").ClearContents
+wCompound.Range("C1").Value = "Compound magnitude"
+wCompound.Range("F:F").ClearContents
+wCompound.Range("F1").Value = "SSD of compounded freqs"
+wCompound.Range("H2:Z1000").ClearContents
+lSSD_min = 1000
+
+itrue_peaks = wPeaks.Range("A1").End(xlDown).Row
+
+lCol = 11
+
+lPoints = 65
+
+'This loop progressively sums the peak functions already identified
+For i = 1 To itrue_peaks
+
+    wSpectral.Activate
+    
+    SolverOk SetCell:=wSpectral.Cells(2, lCol), ByChange:=wSpectral.Cells(2, lCol - 2), Engine:=1, EngineDesc:="GRG Nonlinear"
+    SolverSolve True
+
+    For j = 2 To lPoints
+        wCompound.Range("C" & j).Value = wCompound.Cells(j, 3).Value + wSpectral.Cells(j, lCol - 3)
+        wCompound.Cells(j, i + 7).Value = wCompound.Cells(j, 3).Value + wSpectral.Cells(j, lCol - 3)
+    Next j
+
+wCompound.Range("F" & (i + 1)).Value = wCompound.Range("E2").Value
+wCompound.Activate
+
+
+lCol = lCol + 7
+Next i
+
+lCol = 11
+
+'This loop identifies the compound simulated series that minimises variance
+For k = 2 To wCompound.Range("F1").End(xlDown).Row
+    
+    If wCompound.Range("F" & k).Value < lSSD_min Then
+        lSSD_min = wCompound.Range("F" & k).Value
+        For m = 1 To k
+            For j = 2 To lPoints
+                wCompound.Cells(j, i + 7).Value = wCompound.Cells(j, i + 7).Value + wSpectral.Cells(j, lCol - 3)
+            Next j
+            lCol = lCol + 7
+        Next m
+    End If
+wCompound.Activate
+Next k
+
+MsgBox "Analysis Complete! Spectra aligned: " & i - 1
+
+
+
+End Sub

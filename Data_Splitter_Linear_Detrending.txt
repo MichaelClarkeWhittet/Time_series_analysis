@@ -1,0 +1,162 @@
+Sub Data_Splitter()
+'V1.0
+'This sub takes the output of an imageJ time series measurement of a number of
+'ROIs in parallel and splits them based on which ROI they belong to.
+'This constructs individual time series data for each ROI as a new tab.
+'The main tab with all data should be named 'wData'.
+'Range A1 must contain "XX ROIs". The digits in this number must be counted
+'when defining i_nROIs in this sub, otherwise some may be missed in the process.
+
+Dim wData As Worksheet
+Set wData = ThisWorkbook.Sheets("wData")
+
+Dim ldata_size As Long
+Dim i_nROIs As Integer
+Dim iSeries As Integer
+Dim sSeries As String
+
+ldata_size = wData.Range("A1").End(xlDown).Rows + 1
+i_nROIs = Left(wData.Range("A1").Value, 2)
+
+For iSeries = 2 To i_nROIs
+
+sSeries = iSeries
+Sheets.Add.Name = sSeries
+
+    For current_row = iSeries To ldata_size Step i_nROIs
+        Sheets("wData").Select
+        Range("A" & current_row, "R" & current_row).Select
+        Selection.Copy
+        Sheets(sSeries).Select
+        Range("A" & current_row).Select
+        ActiveSheet.Paste
+    Next current_row
+    
+    Sheets(sSeries).Select
+    Range("A2").Select
+    Selection.SpecialCells(xlCellTypeBlanks).Select
+    Selection.EntireRow.Delete
+    Range("A1").Select
+    Selection.EntireColumn.Insert , CopyOrigin:=xlFormatFromLeftOrAbove
+    For t = 1 To Sheets(sSeries).UsedRange.Rows.Count
+        Sheets(sSeries).Range("A" & t).Value = t
+    Next t
+    
+Next iSeries
+
+MsgBox "Run complete"
+
+End Sub
+Sub Detrending()
+'V1.0
+'This sub makes destructive changes to the data produced by Data_Splitter()
+'To revert, Data_Splitter must be run again, the created sheets must be deleted first
+'It is recommended to save a copy of the sheet after running Data_Splitter() before running this sub
+'Removes measurements from the end of the series deemed near the background (<X AFU)
+'Removes time series with fewer than 12 measurements.
+'Creates a tab "Collated" with all time series average fluorescence as columns for final analysis
+
+Dim wData As Worksheet
+Set wData = ThisWorkbook.Sheets("wData")
+
+Dim ldata_size As Long
+Dim i_nROIs As Integer
+Dim iSeries As Integer
+Dim sSeries As String
+Dim lSeries_size As Long
+Dim lSeries_noBackground As Long
+Dim Delete_tracker As Integer
+Dim formula1 As String
+Dim formula2 As String
+Dim formula3 As String
+
+Delete_Charts
+
+ldata_size = wData.Range("A1").End(xlDown).Rows + 1
+i_nROIs = Left(wData.Range("A1").Value, 3)
+Delete_tracker = 0
+
+For Each Sheet In ActiveWorkbook.Worksheets
+     If Sheet.Name = "Collated" Then
+          Sheet.Delete
+     End If
+Next Sheet
+
+Sheets.Add.Name = "Collated"
+
+For iSeries = 2 To i_nROIs
+    On Error Resume Next
+
+    sSeries = iSeries
+    lSeries_size = Sheets(sSeries).UsedRange.Rows.Count
+    
+    Sheets(sSeries).Select
+    Sheets(sSeries).Range("A100").Select
+    ActiveSheet.Shapes.AddChart2(240, xlXYScatter).Select
+    ActiveChart.SetSourceData Source:=Sheets(sSeries).Range("$A:$A,$D:$D")
+    
+    For t = 0 To lSeries_size
+        If Sheets(sSeries).Range("D" & lSeries_size - t).Value < 400 And lSeries_size > 2 Then
+            Range("A" & lSeries_size - t).Select
+            Selection.EntireRow.Delete
+        Else
+            t = lSeries_size
+        End If
+    Next t
+    
+    
+    ActiveSheet.ChartObjects.Select
+    ActiveChart.FullSeriesCollection(1).Trendlines.Add Type:=xlLinear, Forward _
+        :=0, Backward:=0, DisplayEquation:=0, DisplayRSquared:=0, Name:= _
+        "Linear (Series1)"
+    ActiveChart.FullSeriesCollection(1).Trendlines(1).Select
+    Selection.DisplayEquation = True
+    Selection.DisplayRSquared = False
+    ActiveSheet.ChartObjects.Select
+    ActiveSheet.Range("T1") = ActiveChart.FullSeriesCollection(1).Trendlines(1).DataLabel.Text
+    formula1 = ActiveSheet.Range("T1").Value
+    formula2 = Right(formula1, Len(formula1) - 4)
+    ActiveSheet.Range("T2").Value = formula2
+    
+    For t = 1 To lSeries_size
+        
+        formula3 = Replace(ActiveSheet.Range("T2").Value, "x", "*" & t)
+        ActiveSheet.Range("T3").Value = formula3
+        ActiveSheet.Range("U" & t).Value = "=" & formula3
+        ActiveSheet.Range("V" & t).Value = ActiveSheet.Range("D" & t).Value - ActiveSheet.Range("U" & t).Value
+        
+        Sheets("Collated").Cells(t, 1).Value = t
+        Sheets("Collated").Cells(t, iSeries).Value = ActiveSheet.Range("V" & t).Value
+    
+    Next t
+
+    lSeries_noBackground = Sheets(sSeries).UsedRange.Rows.Count
+    
+    If lSeries_noBackground < 12 Then
+        Sheets(sSeries).Delete
+        Delete_tracker = Delete_tracker + 1
+        
+    End If
+    
+Next iSeries
+
+
+End Sub
+Sub Delete_Charts()
+'V1.0
+'This sub is to prevent multiple charts buildiing up in repeated runs on the same data
+'primarily for debugging but also validates the analysis pipeline
+
+Dim wks As Worksheet
+
+For Each wks In Worksheets
+    If wks.ChartObjects.Count > 0 Then
+        wks.ChartObjects.Delete
+    End If
+Next wks
+End Sub
+
+
+
+
+
